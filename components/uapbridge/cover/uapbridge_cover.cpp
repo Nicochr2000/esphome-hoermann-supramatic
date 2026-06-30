@@ -121,11 +121,13 @@ void UAPBridgeCover::control(const cover::CoverCall &call) {
       if (pos > this->position) {
         this->target_position_ = pos;
         this->parent_->action_open();
-        ESP_LOGI(TAG, "Moving cover to %.0f%% (opening)", pos * 100.0f);
+        ESP_LOGI(TAG, "Go-to %.0f%% OPENING from %.0f%% (open_dur=%u ms, close_dur=%u ms)", pos * 100.0f,
+                 this->position * 100.0f, this->open_duration_, this->close_duration_);
       } else if (pos < this->position) {
         this->target_position_ = pos;
         this->parent_->action_close();
-        ESP_LOGI(TAG, "Moving cover to %.0f%% (closing)", pos * 100.0f);
+        ESP_LOGI(TAG, "Go-to %.0f%% CLOSING from %.0f%% (open_dur=%u ms, close_dur=%u ms)", pos * 100.0f,
+                 this->position * 100.0f, this->open_duration_, this->close_duration_);
       }
     }
   }
@@ -141,12 +143,23 @@ void UAPBridgeCover::loop() {
 
   // Stop at the requested intermediate position, if any.
   if (this->target_position_ >= 0.0f) {
-    const bool reached =
-        (this->current_operation == cover::COVER_OPERATION_OPENING && this->position >= this->target_position_) ||
-        (this->current_operation == cover::COVER_OPERATION_CLOSING && this->position <= this->target_position_);
+    const bool opening = this->current_operation == cover::COVER_OPERATION_OPENING;
+    const bool closing = this->current_operation == cover::COVER_OPERATION_CLOSING;
+    const bool reached = (opening && this->position >= this->target_position_) ||
+                         (closing && this->position <= this->target_position_);
     if (reached) {
+      ESP_LOGI(TAG, "Go-to target reached: op=%d pos=%.0f%% target=%.0f%% -> stopping", (int) this->current_operation,
+               this->position * 100.0f, this->target_position_ * 100.0f);
       this->target_position_ = -1.0f;
-      this->parent_->action_stop();  // the resulting "stopped" broadcast finalises the state
+      // The bus "stop" command (0xFF) reliably halts a CLOSING door but on some
+      // drives is ignored while OPENING (the drive runs to the open end stop).
+      // An impulse — like tapping the wall button — halts a door moving in either
+      // direction, so use it to stop an opening door.
+      if (opening) {
+        this->parent_->action_impulse();
+      } else {
+        this->parent_->action_stop();
+      }
       this->publish_state();
       return;
     }
@@ -156,6 +169,9 @@ void UAPBridgeCover::loop() {
   const uint32_t now = millis();
   if (now - this->last_publish_ms_ >= POSITION_PUBLISH_INTERVAL_MS) {
     this->last_publish_ms_ = now;
+    if (this->target_position_ >= 0.0f)
+      ESP_LOGI(TAG, "Go-to tracking: op=%d pos=%.0f%% target=%.0f%%", (int) this->current_operation,
+               this->position * 100.0f, this->target_position_ * 100.0f);
     this->publish_state();
   }
 }
