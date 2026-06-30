@@ -92,14 +92,144 @@ Bus parameters are fixed by Hörmann: **19200 baud, 8 data bits, no parity, 1 st
 
 ## 🚀 Installation
 
-1. Copy this repo next to your ESPHome config (the `components/` folder must sit beside
-   `hormann.yaml`, as referenced by `external_components: type: local`).
-2. `cp secrets.yaml.example secrets.yaml` and fill in your Wi-Fi / API / OTA secrets.
-3. Adjust `hormann.yaml` (entity names, and the travel times — see below).
-4. Flash once over USB, then OTA afterwards:
-   ```bash
-   esphome run hormann.yaml
-   ```
+### Method A — from the Home Assistant ESPHome dashboard (recommended, no file copying)
+
+The components are pulled **straight from GitHub**, so you only paste one YAML file.
+
+1. Open **ESPHome Device Builder** in Home Assistant → **New device** (or edit your
+   existing one) → **Edit**.
+2. Select everything and paste the complete configuration below. It already references
+   this repo via `external_components: type: git`.
+3. Add your secrets (Wi-Fi / API key / OTA password) in the ESPHome **Secrets** editor —
+   the names must match those used below.
+4. Set the cover travel times (a rough guess is fine, `auto_calibration` refines them).
+5. **Save** → device menu (⋮) → **Install** → **Wirelessly** (USB only needed the very
+   first time on a brand-new board).
+
+```yaml
+substitutions:
+  name: "supramatic-e3"
+  friendly_name: "SupraMatic E3"
+  open_duration: "15s"     # initial seed; auto_calibration refines it
+  close_duration: "15s"
+
+esphome:
+  name: hormann
+  friendly_name: "${friendly_name}"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Components are fetched from this GitHub repo. Pin a release tag (recommended) or use
+# ref: main for the latest. A new tag forces ESPHome to re-fetch past its cache.
+external_components:
+  - source:
+      type: git
+      url: https://github.com/Nicochr2000/esphome-hoermann-supramatic
+      ref: v1.4.0
+    components: [uapbridge, uapbridge_esp]
+    refresh: 1d
+
+logger:
+  level: WARN
+  baud_rate: 0          # free the serial UART; logs still go over the network
+
+api:
+  encryption:
+    key: !secret garagedoor_api_encryption_key
+  reboot_timeout: 0s    # keep the door working even if Home Assistant is down
+
+ota:
+  - platform: esphome
+    password: !secret garagedoor_ota_password
+
+safe_mode:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  reboot_timeout: 0s
+  ap:
+    ssid: "Hormann Fallback Hotspot"
+    password: !secret garagedoor_ap_password
+
+captive_portal:
+
+uart:
+  id: uart_bus
+  baud_rate: 19200
+  rx_pin: 16
+  tx_pin: 17
+
+uapbridge_esp:
+  id: garage_door_comp
+  uart_id: uart_bus
+  # rts_pin: 4          # only if your transceiver has a DE/RE direction pin
+  auto_correction: false
+
+cover:
+  - platform: uapbridge
+    name: "${friendly_name}"
+    device_class: garage
+    auto_calibration: true
+    open_duration: ${open_duration}
+    close_duration: ${close_duration}
+
+switch:
+  - platform: uapbridge
+    venting_switch:
+      id: venting_switch
+      name: "${friendly_name} Venting"
+
+binary_sensor:
+  - platform: uapbridge
+    relay_state:
+      name: "Relay state"
+    error_state:
+      name: "Error"
+    prewarn_state:
+      name: "Pre-warning"
+    got_valid_broadcast:
+      name: "Valid status received"
+
+output:
+  - platform: uapbridge
+    id: gd_light
+
+light:
+  - platform: uapbridge
+    id: my_light
+    name: "${friendly_name} Light"
+    output: gd_light
+
+text_sensor:
+  - platform: uapbridge
+    id: garage_door_state
+    name: "State"
+
+button:
+  - platform: uapbridge
+    vent_button:
+      id: button_vent
+      name: "${friendly_name} Vent"
+    impulse_button:
+      id: button_impulse
+      name: "${friendly_name} Impulse"
+```
+
+### Method B — local components (CLI / offline builds)
+
+Prefer vendoring the component (no dependency on GitHub at build time)? Use
+[`hormann.yaml`](hormann.yaml) from this repo (it references `external_components:
+type: local`, path `components`), copy the `components/` folder next to it, then:
+
+```bash
+cp secrets.yaml.example secrets.yaml   # fill in your secrets
+esphome run hormann.yaml               # USB the first time, OTA afterwards
+```
 
 ---
 
