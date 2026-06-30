@@ -226,17 +226,20 @@ void UAPBridge_esp::receive() {
  * a break. We then restore 19200/8N1 and send the payload.
  *
  * IMPORTANT (the bug fix):
- * The baud rate / word length are switched with the *lightweight* ESP-IDF
- * setters uart_set_baudrate()/uart_set_word_length(), NOT with ESPHome's
+ * The original firmware switched baud/format with ESPHome's
  * UARTComponent::load_settings(). Since ESPHome 2026.2.3 load_settings() tears
  * down and reinstalls the entire UART driver (uart_driver_delete +
  * uart_driver_install). Doing that twice per answer — many times per second —
  * glitched the shared bus line and wrecked the strict response timing, so the
- * drive stopped trusting the emulated UAP1 and went into a degraded/error state
- * in which it ignored its radio hand transmitters and wall button (while a
- * command injected from Home Assistant could still occasionally get through).
- * The lightweight setters only touch the relevant hardware registers and leave
- * the driver — and its RX ring buffer — fully intact.
+ * drive stopped trusting the emulated UAP1 and ignored its radio hand
+ * transmitters and wall button.
+ *
+ * Instead we apply the EXACT SAME uart_config_t that load_settings() builds, but
+ * with a plain uart_param_config() — i.e. the full, faithful reconfiguration the
+ * original firmware relied on, WITHOUT the driver delete/install. Replicating the
+ * complete config (clock source, flow control, RX threshold), not just baud +
+ * word length, is what keeps the emulated UAP1's answers reliable enough that the
+ * drive never raises bus error 7 during idle polling.
  */
 void UAPBridge_esp::transmit() {
   ESP_LOGVV(TAG, "Transmit: %s", print_data(this->tx_data, 0, this->tx_length));
@@ -247,15 +250,26 @@ void UAPBridge_esp::transmit() {
     this->rts_pin_->digital_write(true);  // HIGH = transmit, LOW = listen
   }
 
+  // Same fields ESPHome's IDFUARTComponent::get_config_() uses (only baud_rate
+  // and data_bits differ between the break and the payload).
+  uart_config_t cfg{};
+  cfg.parity = UART_PARITY_DISABLE;
+  cfg.stop_bits = UART_STOP_BITS_1;
+  cfg.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+  cfg.source_clk = UART_SCLK_DEFAULT;
+  cfg.rx_flow_ctrl_thresh = 122;
+
   // 1) Sync break: one 0x00 byte at 9600 baud / 7 data bits.
-  uart_set_baudrate(this->uart_port_, 9600);
-  uart_set_word_length(this->uart_port_, UART_DATA_7_BITS);
+  cfg.baud_rate = 9600;
+  cfg.data_bits = UART_DATA_7_BITS;
+  uart_param_config(this->uart_port_, &cfg);
   this->write_byte(0x00);
   this->flush();  // block until the break has physically left the UART (uart_wait_tx_done)
 
   // 2) Payload: restore the bus format (19200 baud / 8N1) and send the frame.
-  uart_set_baudrate(this->uart_port_, 19200);
-  uart_set_word_length(this->uart_port_, UART_DATA_8_BITS);
+  cfg.baud_rate = 19200;
+  cfg.data_bits = UART_DATA_8_BITS;
+  uart_param_config(this->uart_port_, &cfg);
   this->write_array(this->tx_data, this->tx_length);
   this->flush();
 

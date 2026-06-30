@@ -4,10 +4,10 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/components/uart/uart.h"
-// ESP-IDF only component (see __init__.py -> cv.only_with_esp_idf).
-// We talk to the ESP-IDF UART driver directly to change the baud rate / word
-// length on the fly WITHOUT going through ESPHome's UARTComponent::load_settings(),
-// which reinstalls the whole driver since ESPHome 2026.2.3 (see uapbridge_esp.cpp).
+// ESP32 component (see __init__.py -> cv.only_on_esp32). We reconfigure the bus
+// UART for the per-frame sync break by calling ESP-IDF's uart_param_config()
+// directly, WITHOUT going through ESPHome's UARTComponent::load_settings(), which
+// reinstalls the whole driver since ESPHome 2026.2.3 (see uapbridge_esp.cpp).
 #include "driver/uart.h"
 #include "esphome/components/uart/uart_component_esp_idf.h"
 #include "esphome/components/uapbridge/uapbridge.h"
