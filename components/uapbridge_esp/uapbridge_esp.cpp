@@ -29,15 +29,17 @@ void UAPBridge_esp::loop() {
 }
 
 void UAPBridge_esp::loop_fast() {
-  // Drain the RX bus on every iteration so we never miss a poll from the drive.
+  // Drain the RX bus, then answer a pending poll in the SAME loop iteration.
+  //
+  // The drive expects the slave answer within a tight time window. The previous
+  // CYCLE_TIME gate deferred the transmit by up to ~1 ms plus a full extra loop
+  // iteration; under the heavier ESPHome 2026.x main loop that jitter was enough
+  // for the drive to occasionally miss our answer and raise bus error 7 (which is
+  // exactly the intermittent/persistent "Error" some users saw). receive() sets
+  // send_time when an answer is queued, so we transmit it right away here.
   this->receive();
 
-  if (millis() - this->last_call < CYCLE_TIME) {
-    // avoid unnecessarily frequent calls
-    return;
-  }
-  this->last_call = millis();
-  if (this->send_time != 0 && (millis() >= this->send_time)) {
+  if (this->send_time != 0) {
     ESP_LOGVV(TAG, "loop: transmitting");
     this->transmit();
     this->send_time = 0;
