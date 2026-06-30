@@ -11,12 +11,16 @@ MULTI_CONF = True
 uapbridge_esp_ns = cg.esphome_ns.namespace("uapbridge_esp")
 UAPBridge_esp = uapbridge_esp_ns.class_("UAPBridge_esp", UAPBridge)
 
+# This component talks to the ESP-IDF UART driver directly. Since ESPHome 2026.6
+# the ESP32 UART always uses the IDF driver under both the esp-idf and Arduino
+# frameworks, so requiring ESP32 (rather than the now-removed cv.only_with_esp_idf)
+# is the correct and forward-compatible constraint.
 CONFIG_SCHEMA = cv.All(
     CONFIG_SCHEMA_BASE.extend(
         {
             cv.GenerateID(): cv.declare_id(UAPBridge_esp),
         }
-    ).add_extra(cv.only_with_esp_idf)
+    ).add_extra(cv.only_on_esp32)
 )
 
 FINAL_VALIDATE_SCHEMA = uart.final_validate_device_schema(
