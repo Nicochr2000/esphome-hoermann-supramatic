@@ -1,0 +1,14 @@
+# ESPHome
+secrets.yaml
+.esphome/
+*.bin
+
+# Python
+__pycache__/
+*.pyc
+
+# Claude Code / editors / OS
+.claude/
+.DS_Store
+.vscode/
+.idea/
