@@ -15,6 +15,12 @@ void UAPBridge_esp::setup() {
   auto *idf = static_cast<uart::IDFUARTComponent *>(this->parent_);
   this->uart_port_ = static_cast<uart_port_t>(idf->get_hw_serial_number());
   ESP_LOGCONFIG(TAG, "UAPBridge_esp using UART port %d", (int) this->uart_port_);
+
+  // Run the main loop continuously so the half-duplex bus emulation is never
+  // starved by ESPHome 2026.x's loop sleeping (see header). This is what makes
+  // the drive consistently receive our answers (no bus error 7) and what makes
+  // the "go to position" stop reliable even with the log stream closed.
+  this->high_freq_.start();
 }
 
 void UAPBridge_esp::loop() {

@@ -88,6 +88,14 @@ class UAPBridge_esp : public esphome::uapbridge::UAPBridge {
   // Cached ESP-IDF UART port number of the bus, resolved in setup().
   uart_port_t uart_port_{UART_NUM_0};
 
+  // Keeps the ESPHome main loop running continuously. ESPHome 2026.x puts the
+  // loop to sleep between events to save power; that starves this bus emulation
+  // (which must service the drive's poll within a tight window every few ms),
+  // so the drive intermittently misses our answer -> bus error 7, and an
+  // autonomous "go to position" stop can be lost (symptom: it only worked while
+  // the log stream kept the loop awake). Started in setup().
+  HighFrequencyLoopRequester high_freq_;
+
   // --- Internal state ---
   uint32_t last_call = 0;
   uint32_t last_call_slow = 0;
